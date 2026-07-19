@@ -97,23 +97,39 @@ class ScrollingLabel(tk.Canvas):
             self._after_id = None
 
 
+LYRICS_FONT_SIZE = 20
+LYRICS_FONT_MIN = 8
+LYRICS_FONT_MAX = 48
+
+
 class LyricsWindow(tk.Toplevel):
-    """Read-only scrollable lyrics viewer, same size as the main window."""
+    """Resizable scrollable lyrics viewer, opened at the main window's size,
+    with fixed zoom buttons in the bottom-right corner."""
 
     def __init__(self, master: tk.Misc, width: int, height: int) -> None:
         super().__init__(master, bg=BG)
         self.geometry(f"{width}x{height}")
-        self.minsize(width, height)
-        self.maxsize(width, height)
+        self.minsize(240, 180)
+        _set_window_icon(self)
+
+        self._font = tkfont.Font(family="Yu Gothic UI", size=LYRICS_FONT_SIZE)
 
         scrollbar = ttk.Scrollbar(self)
         scrollbar.pack(side="right", fill="y")
-        self.text = tk.Text(self, bg=BG, fg=FG, font=("Yu Gothic UI", 10),
+        self.text = tk.Text(self, bg=BG, fg=FG, font=self._font,
                             wrap="word", bd=0, highlightthickness=0,
                             padx=14, pady=12, state="disabled",
                             yscrollcommand=scrollbar.set)
         self.text.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.text.yview)
+
+        # Fixed zoom overlay (bottom-right, does not scroll with the text).
+        zoom = ttk.Frame(self)
+        ttk.Button(zoom, text="🔍−", width=4,
+                   command=lambda: self._zoom(-2)).pack(side="left")
+        ttk.Button(zoom, text="🔍+", width=4,
+                   command=lambda: self._zoom(+2)).pack(side="left", padx=(4, 0))
+        zoom.place(relx=1.0, rely=1.0, anchor="se", x=-24, y=-12)
 
         # Keyboard scrolling (the mouse wheel works out of the box).
         for key, (amount, unit) in {"<Up>": (-1, "units"),
@@ -123,6 +139,11 @@ class LyricsWindow(tk.Toplevel):
                                     "<Home>": (None, "top"),
                                     "<End>": (None, "bottom")}.items():
             self.bind(key, self._scroller(amount, unit))
+
+    def _zoom(self, delta: int) -> None:
+        size = max(LYRICS_FONT_MIN,
+                   min(LYRICS_FONT_MAX, self._font.cget("size") + delta))
+        self._font.configure(size=size)
 
     def _scroller(self, amount, unit):
         def handler(_evt):
