@@ -16,6 +16,10 @@ dependencies = [
     "winrt-Windows.Media.Control; sys_platform == 'win32'",
     "winrt-Windows.Foundation; sys_platform == 'win32'",
     "winrt-Windows.Foundation.Collections; sys_platform == 'win32'",
+    "comtypes; sys_platform == 'win32'",
+    "pycaw; sys_platform == 'win32'",
+    "psutil",
+    "uiautomation; sys_platform == 'win32'",
 ]
 
 [project.scripts]

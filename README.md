@@ -18,6 +18,8 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
 ```
 
 - **再生情報・トランスポート操作**: Windows の SMTC (GlobalSystemMediaTransportControlsSession) API
+- **シーク**: Apple Music は SMTC のシーク要求を無視するため、UI Automation で Apple Music 本体のシークスライダー(`LCDScrubber`)を直接操作
+- **出力先ルーティング**: 「音量ミキサー」と同じ永続ストア(undocumented `AudioPolicyConfig` API)を操作し、Apple Music の出力先を GUI のトグルで仮想ケーブル⇔既定値に切り替え
 - **音声処理**: [Rubber Band Library](https://breakfastquay.com/rubberband/) R3 エンジン([pylibrb](https://pypi.org/project/pylibrb/) バインディング)。リアルタイムモードで `process` 呼び出しをまたいで解析状態が維持されるため、ストリーミング処理でも劣化しません(Rubber Band は GPL ライセンスである点に注意)
 - **音声入出力**: WASAPI (sounddevice)
 
@@ -45,25 +47,19 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
    .venv\Scripts\python -m pip install -e .
    ```
 
-3. **Apple Music の出力先を仮想ケーブルに変更**
-
-   Windows の「設定 → システム → サウンド → 音量ミキサー」を開き、
-   Apple Music の出力デバイスを **CABLE Input**(VB-CABLE の場合)に変更します。
-   (`ms-settings:apps-volume` を実行すると直接開けます)
-
-   > この設定により Apple Music の音は仮想ケーブルにだけ流れ、
-   > 他のアプリの音は通常どおりスピーカーから出ます。
-
-4. **起動**
+3. **起動**
 
    ```powershell
    .venv\Scripts\python -m amc
    ```
 
-   GUI で以下を設定して **Start processing** を押します。
+   GUI で以下を設定します。
 
    - **Capture**: 仮想ケーブルのキャプチャ側(例: `CABLE Output (VB-Audio Virtual Cable)`)。既知の仮想ケーブルは自動選択されます
    - **Output**: 実際に音を出したいスピーカー/ヘッドホン
+   - **Route Apple Music to the capture cable** にチェック
+     (Apple Music の出力先が仮想ケーブルに切り替わります。チェックを外すと既定値に戻ります。手動で「設定 → サウンド → 音量ミキサー」から変更しても構いません)
+   - **Start processing** を押す
 
 ## 使い方
 
@@ -71,15 +67,14 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
 |---|---|---|
 | Transpose | ±12 半音 | キー変更(カラオケのキー変更と同じ)。テンポは変わりません |
 | Pitch | ±100 セント | 半音未満の微調整(A=440Hz ↔ 442Hz 合わせなど) |
-| Speed | 50–150 % | テンポ変更。ピッチは変わりません(下記の制約あり) |
+| シークバー | — | 曲内の再生位置を移動 |
 | ⏮ ⏯ ⏭ | — | Apple Music の曲送り / 再生・一時停止 |
+| Route トグル | On/Off | Apple Music の出力先を仮想ケーブル(On)⇔ システム既定(Off)に切り替え |
 
 ## 既知の制約
 
-- **Speed(テンポ)はライブソースの原理的制約があります。** Apple Music は実時間でしか音を出さないため:
-  - **100% 超**: 入力が追い付かず、バッファが尽きると短い無音ギャップが入ります
-  - **100% 未満**: 入力バッファが溜まり続けるため、上限(既定 5 秒)に達すると古い音声をスキップして追い付きます
-  - キー/ピッチ変更(テンポ 100% のまま)にはこの制約はありません
+- **テンポ(再生速度)変更は非対応です。** Apple Music は DRM 保護されたストリームで、音声は実時間の再生でしか取り出せません。加速再生には「まだ再生されていない未来の音声」が必要になるため、ライブソースに対しては原理的に実現できません(曲の事前キャッシュも、曲の長さと同じ時間が掛かるため実用になりません)。キー/ピッチ変更にはこの制約はありません
+- **シーク・ルーティングは非公式な仕組みに依存しています。** シークは Apple Music の UI 要素(UI Automation)、ルーティングは undocumented API を使っているため、Apple Music や Windows の大型更新で動かなくなる可能性があります
 - **レイテンシ**: DSP と バッファリングで合計 150ms 前後の遅延があります。音楽鑑賞では気になりませんが、映像との同期が必要な用途には不向きです
 - **アルバム名の表示**: Apple Music は SMTC のアルバム欄を使わず、アーティスト欄に「アーティスト — アルバム名」形式で報告してくるため、本アプリ側で分解して表示しています
 - 大きなピッチ変更(±6 半音以上)では音質劣化が知覚できる場合があります
@@ -90,8 +85,10 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
 src/amc/
 ├── smtc.py      # SMTC: 再生情報の取得・トランスポート操作
 ├── devices.py   # WASAPI デバイス探索・仮想ケーブル自動検出
-├── dsp.py       # Rubber Band ラッパー(キー/ピッチ/テンポ)
+├── dsp.py       # Rubber Band ラッパー(キー/ピッチ)
 ├── pipeline.py  # キャプチャ → DSP → 出力 のストリーミング
+├── routing.py   # Apple Music の出力先切り替え (AudioPolicyConfig)
+├── seek.py      # UI Automation によるシーク
 ├── gui.py       # tkinter GUI
 └── __main__.py  # `python -m amc` エントリポイント
 ```

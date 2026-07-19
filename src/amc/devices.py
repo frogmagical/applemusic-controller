@@ -72,23 +72,33 @@ def guess_capture_device() -> Device | None:
     return None
 
 
-def default_output_device() -> Device | None:
-    try:
-        default_out = sd.default.device[1]
-    except Exception:
-        return None
-    if default_out is None or default_out < 0:
-        return None
-    d = sd.query_devices(default_out)
-    default_name = d["name"]
-    # sd.default.device may point at an MME entry; map to the WASAPI twin by name.
-    for dev in list_output_devices():
-        if dev.name.startswith(default_name[:20]) or default_name.startswith(dev.name[:20]):
-            return dev
+def _device_from_index(index: int) -> Device:
+    d = sd.query_devices(index)
     return Device(
-        index=default_out,
+        index=index,
         name=d["name"],
         hostapi=sd.query_hostapis(d["hostapi"])["name"],
         max_input_channels=d["max_input_channels"],
         max_output_channels=d["max_output_channels"],
     )
+
+
+def default_output_device() -> Device | None:
+    """The WASAPI host API's own default output device.
+
+    PortAudio keeps a per-host-API default; asking WASAPI directly avoids
+    the fragile name-matching between MME's truncated names and WASAPI's
+    full names, and works the same on any machine.
+    """
+    wasapi = _wasapi_hostapi_index()
+    if wasapi is not None:
+        index = sd.query_hostapis(wasapi)["default_output_device"]
+        if index is not None and index >= 0:
+            return _device_from_index(index)
+    try:
+        index = sd.default.device[1]
+    except Exception:
+        return None
+    if index is None or index < 0:
+        return None
+    return _device_from_index(index)
