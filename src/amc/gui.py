@@ -97,7 +97,7 @@ class ScrollingLabel(tk.Canvas):
             self._after_id = None
 
 
-LYRICS_FONT_SIZE = 20
+LYRICS_FONT_SIZE = 12
 LYRICS_FONT_MIN = 8
 LYRICS_FONT_MAX = 48
 
