@@ -136,7 +136,7 @@ class LyricsWindow(tk.Toplevel):
         return handler
 
     def show(self, track_title: str, lyrics: str) -> None:
-        self.title(f"歌詞 — {track_title}")
+        self.title(f"Lyrics — {track_title}")
         self.text.config(state="normal")
         self.text.delete("1.0", "end")
         self.text.insert("1.0", lyrics)
@@ -240,7 +240,7 @@ class App:
                    command=self.smtc.toggle_play_pause).pack(side="left", padx=4)
         ttk.Button(row, text="⏭", width=4,
                    command=self.smtc.skip_next).pack(side="left")
-        self.btn_lyrics = ttk.Button(row, text="歌詞", width=5,
+        self.btn_lyrics = ttk.Button(row, text="Lyrics", width=7,
                                      command=self._open_lyrics,
                                      state="disabled")
         self.btn_lyrics.pack(side="left", padx=(10, 0))
