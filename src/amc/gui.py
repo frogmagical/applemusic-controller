@@ -23,6 +23,27 @@ ACCENT = "#e8b93c"
 POLL_MS = 500
 SEEK_SUPPRESS_S = 1.5  # ignore SMTC position for a moment after a seek
 
+
+def _set_window_icon(root: tk.Tk) -> None:
+    """PyInstaller's --icon only brands the exe file; the running window
+    needs the .ico set explicitly (bundled via --add-data when frozen)."""
+    import os
+    import sys
+
+    candidates = []
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        candidates.append(os.path.join(bundle_dir, "icon.ico"))
+    candidates.append(os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "assets", "icon.ico")))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                root.iconbitmap(path)
+            except tk.TclError:
+                continue
+            return
+
 CONTENT_WIDTH = 320          # fixed inner width for the text area (px)
 SCROLL_WAIT_MS = 3000        # delay before the one-shot overflow scroll
 SCROLL_STEP_MS = 33
@@ -81,6 +102,7 @@ class App:
         root.title("Apple Music Controller")
         root.configure(bg=BG)
         root.resizable(False, False)
+        _set_window_icon(root)
 
         self.engine = StretchEngine()
         self.pipeline: AudioPipeline | None = None

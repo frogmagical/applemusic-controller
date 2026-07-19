@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 build/
 dist/
+*.spec
 *.egg-info/
 .claude/settings.local.json

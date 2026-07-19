@@ -23,6 +23,14 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
 - **音声処理**: [Rubber Band Library](https://breakfastquay.com/rubberband/) R3 エンジン([pylibrb](https://pypi.org/project/pylibrb/) バインディング)。リアルタイムモードで `process` 呼び出しをまたいで解析状態が維持されるため、ストリーミング処理でも劣化しません(Rubber Band は GPL ライセンスである点に注意)
 - **音声入出力**: WASAPI (sounddevice)
 
+## ダウンロード(exe 版)
+
+Python 環境が無くても使える単体 exe を同梱しています:
+
+**[release/AppleMusicController-win64.zip](release/AppleMusicController-win64.zip)** をダウンロード([直接リンク](https://github.com/frogmagical/applemusic-controller/raw/main/release/AppleMusicController-win64.zip))
+
+zip には exe と英語/日本語の README(txt)が入っています。解凍して `AppleMusicController.exe` を実行するだけです(未署名のため SmartScreen 警告が出た場合は「詳細情報 → 実行」)。仮想オーディオケーブル(下記)のインストールは exe 版でも必要です。
+
 ## 動作要件
 
 - Windows 10 2004 以降 / Windows 11
@@ -97,4 +105,15 @@ src/amc/
 
 ```powershell
 .venv\Scripts\python -m amc.smtc
+```
+
+exe のビルド(PyInstaller):
+
+```powershell
+.venv\Scripts\python -m pip install pyinstaller
+.venv\Scripts\pyinstaller --noconfirm --clean --onefile --noconsole `
+  --name AppleMusicController --icon assets\icon.ico --add-data "assets\icon.ico;." `
+  --collect-submodules winrt --paths src packaging\launcher.py
+Compress-Archive -Force -Path dist\AppleMusicController.exe, packaging\README_en.txt, packaging\README_ja.txt `
+  -DestinationPath release\AppleMusicController-win64.zip
 ```
