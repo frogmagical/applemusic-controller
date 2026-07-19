@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 
 from . import devices as dev
@@ -21,6 +22,57 @@ ACCENT = "#e8b93c"
 
 POLL_MS = 500
 SEEK_SUPPRESS_S = 1.5  # ignore SMTC position for a moment after a seek
+
+CONTENT_WIDTH = 320          # fixed inner width for the text area (px)
+SCROLL_WAIT_MS = 3000        # delay before the one-shot overflow scroll
+SCROLL_STEP_MS = 33
+SCROLL_CHARS_PER_S = 2.0     # full-width chars per second (= 4 half-width)
+
+
+class ScrollingLabel(tk.Canvas):
+    """Fixed-width one-line label. When the text overflows, it scrolls
+    left exactly once (wait 3 s, scroll until every glyph has left the
+    canvas, snap back) and then stays static until the text changes."""
+
+    def __init__(self, parent: tk.Misc, width: int, font, fill: str) -> None:
+        self._font = tkfont.Font(font=font)
+        height = self._font.metrics("linespace") + 2
+        super().__init__(parent, width=width, height=height, bg=BG,
+                         highlightthickness=0, bd=0)
+        self._width = width
+        self._y = height // 2
+        self._text = None
+        self._text_width = 0
+        self._px_per_step = (SCROLL_CHARS_PER_S * self._font.measure("あ")
+                             * SCROLL_STEP_MS / 1000.0)
+        self._after_id: str | None = None
+        self._item = self.create_text(0, self._y, anchor="w", font=font,
+                                      fill=fill, text="")
+
+    def set_text(self, text: str) -> None:
+        if text == self._text:
+            return
+        self._text = text
+        self._cancel()
+        self.itemconfig(self._item, text=text)
+        self.coords(self._item, 0, self._y)
+        self._text_width = self._font.measure(text)
+        if self._text_width > self._width:
+            self._after_id = self.after(SCROLL_WAIT_MS, self._step)
+
+    def _step(self) -> None:
+        x = self.coords(self._item)[0] - self._px_per_step
+        if x <= -self._text_width:  # every glyph has scrolled out
+            self.coords(self._item, 0, self._y)
+            self._after_id = None
+            return
+        self.coords(self._item, x, self._y)
+        self._after_id = self.after(SCROLL_STEP_MS, self._step)
+
+    def _cancel(self) -> None:
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
 
 
 class App:
@@ -49,6 +101,15 @@ class App:
         self._build_devices()
         self._build_footer()
         self._init_route_state()
+
+        # Freeze the window at its natural size: text is drawn on
+        # fixed-width canvases, so nothing can push the layout around.
+        root.update_idletasks()
+        width, height = root.winfo_reqwidth(), root.winfo_reqheight()
+        root.geometry(f"{width}x{height}")
+        root.minsize(width, height)
+        root.maxsize(width, height)
+
         self._poll()
 
         root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -78,13 +139,15 @@ class App:
 
     def _build_now_playing(self) -> None:
         f = self._section()
-        self.var_title = tk.StringVar(value="—")
-        self.var_artist = tk.StringVar(value="")
         self.var_time = tk.StringVar(value="0:00 / 0:00")
-        ttk.Label(f, textvariable=self.var_title, style="Title.TLabel",
-                  wraplength=300).pack(anchor="w")
-        ttk.Label(f, textvariable=self.var_artist, style="Dim.TLabel",
-                  wraplength=300).pack(anchor="w")
+        self.label_title = ScrollingLabel(
+            f, CONTENT_WIDTH, ("Yu Gothic UI", 12, "bold"), FG)
+        self.label_title.pack(anchor="w")
+        self.label_title.set_text("—")
+        self.label_artist = ScrollingLabel(
+            f, CONTENT_WIDTH, ("Yu Gothic UI", 9), FG_DIM)
+        self.label_artist.pack(anchor="w")
+        self.label_artist.set_text("")
 
         self.var_seek = tk.DoubleVar(value=0.0)
         self.seek_scale = ttk.Scale(f, from_=0.0, to=1.0, variable=self.var_seek)
@@ -277,11 +340,11 @@ class App:
     def _poll(self) -> None:
         np_ = self.smtc.now_playing
         if np_.found:
-            self.var_title.set(np_.title or "—")
+            self.label_title.set_text(np_.title or "—")
             artist = np_.artist
             if np_.album:
                 artist = f"{artist} — {np_.album}" if artist else np_.album
-            self.var_artist.set(artist)
+            self.label_artist.set_text(artist)
             self.var_time.set(
                 f"{format_timedelta(np_.position)} / {format_timedelta(np_.duration)}"
                 + ("" if np_.is_playing else f"  ({np_.status})"))
@@ -291,8 +354,8 @@ class App:
                 self.seek_scale.configure(to=duration_s)
                 self.var_seek.set(min(np_.position.total_seconds(), duration_s))
         else:
-            self.var_title.set("Apple Music not detected")
-            self.var_artist.set("")
+            self.label_title.set_text("Apple Music not detected")
+            self.label_artist.set_text("")
             self.var_time.set("-:-- / -:--")
 
         if self.pipeline is not None:
