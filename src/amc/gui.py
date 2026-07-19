@@ -11,6 +11,7 @@ from tkinter import messagebox, ttk
 from . import devices as dev
 from . import routing
 from .dsp import StretchEngine
+from .lyrics import LyricsClient
 from .pipeline import AudioPipeline
 from .seek import AppleMusicSeeker
 from .smtc import SmtcClient, format_timedelta
@@ -96,6 +97,55 @@ class ScrollingLabel(tk.Canvas):
             self._after_id = None
 
 
+class LyricsWindow(tk.Toplevel):
+    """Read-only scrollable lyrics viewer, same size as the main window."""
+
+    def __init__(self, master: tk.Misc, width: int, height: int) -> None:
+        super().__init__(master, bg=BG)
+        self.geometry(f"{width}x{height}")
+        self.minsize(width, height)
+        self.maxsize(width, height)
+
+        scrollbar = ttk.Scrollbar(self)
+        scrollbar.pack(side="right", fill="y")
+        self.text = tk.Text(self, bg=BG, fg=FG, font=("Yu Gothic UI", 10),
+                            wrap="word", bd=0, highlightthickness=0,
+                            padx=14, pady=12, state="disabled",
+                            yscrollcommand=scrollbar.set)
+        self.text.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.text.yview)
+
+        # Keyboard scrolling (the mouse wheel works out of the box).
+        for key, (amount, unit) in {"<Up>": (-1, "units"),
+                                    "<Down>": (1, "units"),
+                                    "<Prior>": (-1, "pages"),
+                                    "<Next>": (1, "pages"),
+                                    "<Home>": (None, "top"),
+                                    "<End>": (None, "bottom")}.items():
+            self.bind(key, self._scroller(amount, unit))
+
+    def _scroller(self, amount, unit):
+        def handler(_evt):
+            if unit == "top":
+                self.text.yview_moveto(0.0)
+            elif unit == "bottom":
+                self.text.yview_moveto(1.0)
+            else:
+                self.text.yview_scroll(amount, unit)
+            return "break"
+        return handler
+
+    def show(self, track_title: str, lyrics: str) -> None:
+        self.title(f"歌詞 — {track_title}")
+        self.text.config(state="normal")
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", lyrics)
+        self.text.config(state="disabled")
+        self.text.yview_moveto(0.0)
+        self.deiconify()
+        self.focus_set()
+
+
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -116,6 +166,11 @@ class App:
 
         self._seek_dragging = False
         self._seek_suppress_until = 0.0
+
+        self.lyrics_client = LyricsClient()
+        self._lyrics_window: LyricsWindow | None = None
+        self._current_lyrics: str | None = None
+        self._shown_lyrics_track: tuple[str, str] | None = None
 
         self._build_style()
         self._build_now_playing()
@@ -185,6 +240,10 @@ class App:
                    command=self.smtc.toggle_play_pause).pack(side="left", padx=4)
         ttk.Button(row, text="⏭", width=4,
                    command=self.smtc.skip_next).pack(side="left")
+        self.btn_lyrics = ttk.Button(row, text="歌詞", width=5,
+                                     command=self._open_lyrics,
+                                     state="disabled")
+        self.btn_lyrics.pack(side="left", padx=(10, 0))
         ttk.Label(row, textvariable=self.var_time,
                   style="Dim.TLabel").pack(side="right")
 
@@ -325,6 +384,38 @@ class App:
             self.var_route.set(not self.var_route.get())  # revert
             messagebox.showerror("Routing", str(exc))
 
+    # -- lyrics ------------------------------------------------------------
+
+    def _poll_lyrics(self, np_) -> None:
+        if not (np_.found and np_.title):
+            self._current_lyrics = None
+            self.btn_lyrics.state(["disabled"])
+            return
+        result = self.lyrics_client.poll(
+            np_.title, np_.artist, np_.duration.total_seconds())
+        self._current_lyrics = result if isinstance(result, str) else None
+        self.btn_lyrics.state(
+            ["!disabled"] if self._current_lyrics else ["disabled"])
+
+        # Follow track changes while the viewer is open.
+        track = (np_.title, np_.artist)
+        if (self._current_lyrics
+                and self._lyrics_window is not None
+                and self._lyrics_window.winfo_exists()
+                and self._shown_lyrics_track != track):
+            self._lyrics_window.show(np_.title, self._current_lyrics)
+            self._shown_lyrics_track = track
+
+    def _open_lyrics(self) -> None:
+        if self._current_lyrics is None:
+            return
+        np_ = self.smtc.now_playing
+        if self._lyrics_window is None or not self._lyrics_window.winfo_exists():
+            self._lyrics_window = LyricsWindow(
+                self.root, self.root.winfo_width(), self.root.winfo_height())
+        self._lyrics_window.show(np_.title, self._current_lyrics)
+        self._shown_lyrics_track = (np_.title, np_.artist)
+
     # -- pipeline ----------------------------------------------------------
 
     def _toggle_pipeline(self) -> None:
@@ -379,6 +470,7 @@ class App:
             self.label_title.set_text("Apple Music not detected")
             self.label_artist.set_text("")
             self.var_time.set("-:-- / -:--")
+        self._poll_lyrics(np_)
 
         if self.pipeline is not None:
             s = self.pipeline.stats
