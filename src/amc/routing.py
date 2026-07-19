@@ -21,6 +21,9 @@ from comtypes import GUID
 from pycaw.pycaw import AudioUtilities
 
 APPLE_MUSIC_PROCESS = "AppleMusic.exe"
+# Package-family AUMID; the publisher hash is derived from Apple's publisher
+# identity, so it is identical on every machine.
+APPLE_MUSIC_AUMID = "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App"
 
 _IID_21H2 = GUID("{AB3D4648-E242-459F-B02F-541C70306324}")
 _IID_LEGACY = GUID("{2A59116D-6C4F-45E0-A74F-707E3FEF9258}")
@@ -118,6 +121,47 @@ class _PolicyConfig:
 
 def _device_path(mmdevice_id: str) -> str:
     return f"\\\\?\\SWD#MMDEVAPI#{mmdevice_id}#{_DEVINTERFACE_AUDIO_RENDER}"
+
+
+def _post_wm_close(pids: set[int]) -> None:
+    """Ask every top-level window of the given processes to close.
+
+    WM_CLOSE lets Apple Music shut down cleanly; TerminateProcess makes
+    it show a "closed because of a problem" dialog on the next launch.
+    """
+    user32 = ctypes.windll.user32
+    WM_CLOSE = 0x0010
+
+    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+    def enum_callback(hwnd, _lparam):
+        pid = c_uint32()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in pids and user32.IsWindowVisible(hwnd):
+            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        return 1
+
+    user32.EnumWindows(enum_callback, 0)
+
+
+def restart_apple_music(timeout_s: float = 10.0) -> None:
+    """Gracefully close and relaunch Apple Music.
+
+    The app only picks up its persisted output-device assignment at
+    startup, so a routing change needs one restart to take effect.
+    """
+    import subprocess
+
+    procs = [p for p in psutil.process_iter(["name"])
+             if p.info["name"] == APPLE_MUSIC_PROCESS]
+    if procs:
+        _post_wm_close({p.pid for p in procs})
+        _, alive = psutil.wait_procs(procs, timeout=timeout_s)
+        for proc in alive:  # last resort only
+            try:
+                proc.kill()
+            except psutil.Error:
+                pass
+    subprocess.Popen(["explorer.exe", f"shell:appsFolder\\{APPLE_MUSIC_AUMID}"])
 
 
 def apple_music_pid() -> int | None:

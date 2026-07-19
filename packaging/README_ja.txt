@@ -31,6 +31,9 @@ Windows 版 Apple Music の再生音のキー(Transpose)とピッチをリアル
    - 「Route Apple Music to the capture cable」にチェック
      → Apple Music の音が仮想ケーブルへ流れます。
      チェックを外すと Windows の既定値に戻ります
+     ※ Apple Music は起動中の出力先変更を反映しないため、切り替え後に
+        再起動の確認ダイアログが出ます(Yes で自動再起動)。設定は保存
+        されるので、再起動が必要なのは切り替えた時の 1 回だけです
    - 「Start processing」を押す
 4. スライダーを操作:
    - Transpose : キー変更(±12 半音)

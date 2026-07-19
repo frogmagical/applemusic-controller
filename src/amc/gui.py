@@ -3,6 +3,7 @@ key/pitch sliders, device selection and Apple Music output routing."""
 
 from __future__ import annotations
 
+import threading
 import time
 import tkinter as tk
 import tkinter.font as tkfont
@@ -404,6 +405,27 @@ class App:
         except Exception as exc:
             self.var_route.set(not self.var_route.get())  # revert
             messagebox.showerror("Routing", str(exc))
+            return
+        self._offer_apple_music_restart()
+
+    def _offer_apple_music_restart(self) -> None:
+        # Apple Music only reads its output-device assignment at startup.
+        if routing.apple_music_pid() is None:
+            return
+        if messagebox.askyesno(
+                "Routing",
+                "Apple Music only applies output-device changes at startup.\n"
+                "Restart Apple Music now? (Playback will stop.)"):
+            self.var_status.set("Restarting Apple Music…")
+            threading.Thread(target=self._restart_apple_music,
+                             daemon=True).start()
+
+    def _restart_apple_music(self) -> None:
+        try:
+            routing.restart_apple_music()
+        except Exception as exc:
+            message = str(exc)
+            self.root.after(0, lambda: messagebox.showerror("Routing", message))
 
     # -- lyrics ------------------------------------------------------------
 

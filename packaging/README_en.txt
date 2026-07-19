@@ -32,6 +32,9 @@ HOW TO USE
    - Check "Route Apple Music to the capture cable".
      Apple Music's audio is now routed into the cable.
      Unchecking restores the Windows default device.
+     Note: Apple Music only applies output-device changes at startup,
+     so a confirmation dialog offers to restart it for you. The setting
+     is persistent - the restart is only needed when you flip the toggle.
    - Press "Start processing".
 4. Move the sliders:
    - Transpose : key change in semitones (+/-12)
