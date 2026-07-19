@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "applemusic-controller"
+version = "0.1.0"
+description = "Real-time key / pitch / tempo control for Apple Music playback on Windows"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "sounddevice>=0.4.6",
+    "python-stretch>=0.3",
+    "winrt-runtime; sys_platform == 'win32'",
+    "winrt-Windows.Media.Control; sys_platform == 'win32'",
+    "winrt-Windows.Foundation; sys_platform == 'win32'",
+    "winrt-Windows.Foundation.Collections; sys_platform == 'win32'",
+]
+
+[project.scripts]
+applemusic-controller = "amc.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
