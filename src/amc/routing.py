@@ -21,9 +21,9 @@ from comtypes import GUID
 from pycaw.pycaw import AudioUtilities
 
 APPLE_MUSIC_PROCESS = "AppleMusic.exe"
-# Package-family AUMID; the publisher hash is derived from Apple's publisher
-# identity, so it is identical on every machine.
-APPLE_MUSIC_AUMID = "AppleInc.AppleMusicWin_nzyj5cx40ttqa!App"
+# The Apple Music UI process never opens an audio session; the actual
+# renderer is this background agent, so routing must target it.
+AUDIO_AGENT_PROCESS = "AMPLibraryAgent.exe"
 
 _IID_21H2 = GUID("{AB3D4648-E242-459F-B02F-541C70306324}")
 _IID_LEGACY = GUID("{2A59116D-6C4F-45E0-A74F-707E3FEF9258}")
@@ -123,52 +123,19 @@ def _device_path(mmdevice_id: str) -> str:
     return f"\\\\?\\SWD#MMDEVAPI#{mmdevice_id}#{_DEVINTERFACE_AUDIO_RENDER}"
 
 
-def _post_wm_close(pids: set[int]) -> None:
-    """Ask every top-level window of the given processes to close.
-
-    WM_CLOSE lets Apple Music shut down cleanly; TerminateProcess makes
-    it show a "closed because of a problem" dialog on the next launch.
-    """
-    user32 = ctypes.windll.user32
-    WM_CLOSE = 0x0010
-
-    @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
-    def enum_callback(hwnd, _lparam):
-        pid = c_uint32()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if pid.value in pids and user32.IsWindowVisible(hwnd):
-            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-        return 1
-
-    user32.EnumWindows(enum_callback, 0)
-
-
-def restart_apple_music(timeout_s: float = 10.0) -> None:
-    """Gracefully close and relaunch Apple Music.
-
-    The app only picks up its persisted output-device assignment at
-    startup, so a routing change needs one restart to take effect.
-    """
-    import subprocess
-
-    procs = [p for p in psutil.process_iter(["name"])
-             if p.info["name"] == APPLE_MUSIC_PROCESS]
-    if procs:
-        _post_wm_close({p.pid for p in procs})
-        _, alive = psutil.wait_procs(procs, timeout=timeout_s)
-        for proc in alive:  # last resort only
-            try:
-                proc.kill()
-            except psutil.Error:
-                pass
-    subprocess.Popen(["explorer.exe", f"shell:appsFolder\\{APPLE_MUSIC_AUMID}"])
+def _pid_of(process_name: str) -> int | None:
+    for proc in psutil.process_iter(["name"]):
+        if proc.info["name"] == process_name:
+            return proc.pid
+    return None
 
 
 def apple_music_pid() -> int | None:
-    for proc in psutil.process_iter(["name"]):
-        if proc.info["name"] == APPLE_MUSIC_PROCESS:
-            return proc.pid
-    return None
+    return _pid_of(APPLE_MUSIC_PROCESS)
+
+
+def audio_agent_pid() -> int | None:
+    return _pid_of(AUDIO_AGENT_PROCESS)
 
 
 def list_render_endpoints() -> list[tuple[str, str]]:
@@ -203,28 +170,43 @@ def capture_driver_hint(capture_name: str) -> str:
 
 
 class AppleMusicRouter:
-    """On/off routing of Apple Music's output to a chosen render endpoint."""
+    """On/off routing of Apple Music's output to a chosen render endpoint.
+
+    Targets AMPLibraryAgent.exe (the process that actually renders the
+    audio). Streams are recreated on every track change, so a change
+    takes effect from the next track - no Apple Music restart needed.
+    """
 
     def __init__(self) -> None:
         self._config = _PolicyConfig()
 
-    def current_endpoint(self) -> str:
-        pid = apple_music_pid()
+    def _agent_pid(self) -> int:
+        pid = audio_agent_pid()
         if pid is None:
-            raise RoutingError("Apple Music is not running")
-        return self._config.get_endpoint(pid)
+            raise RoutingError(
+                "AMPLibraryAgent.exe is not running (start Apple Music first)")
+        return pid
+
+    def _clear_frontend(self) -> None:
+        """Remove any endpoint pinned on the UI process: it is not the
+        renderer, and routing it can break the app's playback engine."""
+        pid = apple_music_pid()
+        if pid is not None:
+            try:
+                self._config.set_endpoint(pid, None)
+            except RoutingError:
+                pass
+
+    def current_endpoint(self) -> str:
+        return self._config.get_endpoint(self._agent_pid())
 
     def route_to(self, mmdevice_id: str) -> None:
-        pid = apple_music_pid()
-        if pid is None:
-            raise RoutingError("Apple Music is not running")
-        self._config.set_endpoint(pid, _device_path(mmdevice_id))
+        self._config.set_endpoint(self._agent_pid(), _device_path(mmdevice_id))
+        self._clear_frontend()
 
     def reset(self) -> None:
-        pid = apple_music_pid()
-        if pid is None:
-            raise RoutingError("Apple Music is not running")
-        self._config.set_endpoint(pid, None)
+        self._config.set_endpoint(self._agent_pid(), None)
+        self._clear_frontend()
 
 
 if __name__ == "__main__":
