@@ -1,8 +1,13 @@
-"""Pitch / tempo engine built on Signalsmith Stretch.
+"""Pitch / tempo engine built on Rubber Band (pylibrb, R3 "finer" engine).
+
+Rubber Band's realtime mode keeps analysis state across arbitrarily sized
+`process` calls, which is what a streaming pipeline needs. (The previous
+Signalsmith python-stretch binding resets per call and produces severe
+artifacts when fed 512-sample blocks.)
 
 Parameters are set from the GUI thread and applied inside `process`,
 which is called from the audio thread; a lock plus a "dirty" flag keeps
-the underlying Stretch object single-threaded.
+the underlying stretcher object single-threaded.
 
 Conventions:
     semitones : key change in semitones (+/-12)
@@ -16,13 +21,18 @@ from __future__ import annotations
 import threading
 
 import numpy as np
-from python_stretch import Signalsmith
+from pylibrb import Option, RubberBandStretcher
 
 
 class StretchEngine:
     def __init__(self, channels: int = 2, samplerate: int = 48000) -> None:
-        self._stretch = Signalsmith.Stretch()
-        self._stretch.preset(channels, samplerate)
+        self._rb = RubberBandStretcher(
+            sample_rate=samplerate,
+            channels=channels,
+            options=(Option.PROCESS_REALTIME
+                     | Option.ENGINE_FINER
+                     | Option.PitchHighConsistency),
+        )
         self._lock = threading.Lock()
         self._semitones = 0.0
         self._cents = 0.0
@@ -75,16 +85,21 @@ class StretchEngine:
             if not self._dirty:
                 return
             total_semitones = self._semitones + self._cents / 100.0
-            self._stretch.setTransposeFactor(2.0 ** (total_semitones / 12.0))
-            # Signalsmith timeFactor: output_len = input_len / timeFactor,
-            # i.e. factor > 1 plays the content faster.
-            self._stretch.setTimeFactor(self._speed)
+            self._rb.pitch_scale = 2.0 ** (total_semitones / 12.0)
+            # Rubber Band time_ratio: >1 = slower/longer output,
+            # our speed: >1 = faster, hence the inverse.
+            self._rb.time_ratio = 1.0 / self._speed
             self._dirty = False
 
-    def process(self, block: np.ndarray) -> np.ndarray:
-        """block: float32 array shaped (channels, frames). Returns same layout."""
+    def process(self, block: np.ndarray) -> np.ndarray | None:
+        """block: float32 (channels, frames). Returns whatever output is
+        ready as (channels, N), or None while the engine is still priming."""
         self._apply_pending()
-        return self._stretch.process(block)
+        self._rb.process(block, False)
+        available = self._rb.available()
+        if available > 0:
+            return self._rb.retrieve(available)
+        return None
 
     def flush(self) -> None:
-        self._stretch.reset()
+        self._rb.reset()

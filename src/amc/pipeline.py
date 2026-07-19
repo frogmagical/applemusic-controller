@@ -115,9 +115,12 @@ class AudioPipeline:
                 self._skips += 1
 
         # Feed the engine until we have enough output for this callback.
+        # (Right after start the engine buffers input and returns None.)
         while self._outbuf.length < frames and self._inbuf.length >= self.blocksize:
             chunk = self._inbuf.pop(self.blocksize)
-            self._outbuf.push(self.engine.process(chunk))
+            processed = self.engine.process(chunk)
+            if processed is not None:
+                self._outbuf.push(processed)
 
         outdata[:] = self._outbuf.pop(frames).T
 
