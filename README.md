@@ -1,6 +1,7 @@
 # applemusic-controller
 
-Windows 版 Apple Music の再生音に対して、**キー(Transpose)・ピッチ(Pitch)・テンポ(Speed)** をリアルタイムに変更する Python 製アプリです。処理は Apple Music の音声だけに掛かり、他のアプリの音声には影響しません。再生中の曲名・アーティスト・再生位置の表示と、再生/一時停止・曲送りの操作もできます。
+Windows 版 Apple Music の楽曲の、**キー(Transpose)・ピッチ(Pitch)** を変更するアプリです。  
+再生中の曲名・アーティスト・再生位置の表示と、再生/一時停止・曲送りの操作もできます。
 
 ## 仕組み
 
@@ -17,108 +18,53 @@ Apple Music ──(Windows のアプリ別出力設定)──▶ 仮想オーデ
 他のアプリの音声 ─────────(通常経路のまま)─────────▶ 実際のスピーカー
 ```
 
-- **再生情報・トランスポート操作**: Windows の SMTC (GlobalSystemMediaTransportControlsSession) API
-- **シーク**: Apple Music は SMTC のシーク要求を無視するため、UI Automation で Apple Music 本体のシークスライダー(`LCDScrubber`)を直接操作
-- **出力先ルーティング**: 「音量ミキサー」と同じ永続ストア(undocumented `AudioPolicyConfig` API)を操作し、Apple Music の出力先を GUI のトグルで仮想ケーブル⇔既定値に切り替え
-- **歌詞表示**: 再生中の曲名・アーティスト名をキーに [lrclib.net](https://lrclib.net/) の公開 API から取得(ネットワーク接続が必要)。見つかった曲だけ「歌詞」ボタンが有効になります
-- **音声処理**: [Rubber Band Library](https://breakfastquay.com/rubberband/) R3 エンジン([pylibrb](https://pypi.org/project/pylibrb/) バインディング)。リアルタイムモードで `process` 呼び出しをまたいで解析状態が維持されるため、ストリーミング処理でも劣化しません(Rubber Band は GPL ライセンスである点に注意)
-- **音声入出力**: WASAPI (sounddevice)
-
 ## ダウンロード(exe 版)
 
 Python 環境が無くても使える単体 exe を同梱しています:
 
-**[release/AppleMusicController-win64.zip](release/AppleMusicController-win64.zip)** をダウンロード([直接リンク](https://github.com/frogmagical/applemusic-controller/raw/main/release/AppleMusicController-win64.zip))
-
-zip には exe と英語/日本語の README(txt)が入っています。解凍して `AppleMusicController.exe` を実行するだけです(未署名のため SmartScreen 警告が出た場合は「詳細情報 → 実行」)。仮想オーディオケーブル(下記)のインストールは exe 版でも必要です。
+**[release/AppleMusicController-win64.zip](release/AppleMusicController-win64.zip)** 
+([Direct Link](https://github.com/frogmagical/applemusic-controller/raw/main/release/AppleMusicController-win64.zip))
 
 ## 動作要件
 
 - Windows 10 2004 以降 / Windows 11
 - Python 3.10 以降
 - Apple Music (Microsoft Store 版)
-- 仮想オーディオケーブル(いずれか 1 つ)
-  - [VB-CABLE](https://vb-audio.com/Cable/)(推奨・無料。インストールに管理者権限が必要)
+- 仮想オーディオケーブル
+  - [VB-CABLE](https://vb-audio.com/Cable/)(未導入の場合推奨、動作確認済み)
   - Voicemeeter、その他「出力デバイス+対になるキャプチャデバイス」を提供するもの
 
 ## セットアップ
 
-1. **仮想オーディオケーブルの導入**(未導入の場合)
+1. **仮想オーディオケーブルの導入**
 
    [VB-CABLE](https://vb-audio.com/Cable/) をダウンロードし、管理者権限でインストールして再起動します。
 
-2. **本アプリのインストール**
+2. zipファイルを任意の場所で解凍し AppleMusicController.exe を実行
 
-   ```powershell
-   git clone https://github.com/frogmagical/applemusic-controller.git
-   cd applemusic-controller
-   py -3 -m venv .venv
-   .venv\Scripts\python -m pip install -e .
-   ```
+3. Apple Musicを起動します
 
-3. **起動**
+4. アプリ画面で以下を設定:
+  - Capture：仮想ケーブルを選択。(例: CABLE Output) 検出できた場合は自動選択されます
+  - Output：実際に聴くスピーカー/ヘッドホンを選択
+  - 「Route Apple Music to the capture cable」にチェック (チェックを外すとApple Musicの音声出力先が既定値に戻ります)
+  - 「Start processing」を押す
 
-   ```powershell
-   .venv\Scripts\python -m amc
-   ```
+5. 好きな曲を再生
+もし音が聞こえない場合、一度曲を停止した後に別の曲を再生してみてください
 
-   GUI で以下を設定します。
-
-   - **Capture**: 仮想ケーブルのキャプチャ側(例: `CABLE Output (VB-Audio Virtual Cable)`)。既知の仮想ケーブルは自動選択されます
-   - **Output**: 実際に音を出したいスピーカー/ヘッドホン
-   - **Route Apple Music to the capture cable** にチェック
-     (Apple Music の出力先が仮想ケーブルに切り替わります。チェックを外すと既定値に戻ります。手動で「設定 → サウンド → 音量ミキサー」から変更しても構いません)
-   - ルーティングの変更は**次の曲の再生開始から**反映されます(再生中の曲には掛かりません。曲を一度送れば OK)。設定は永続なので、一度 On にすれば以後は Apple Music を再起動しても維持されます
-   - **Start processing** を押す
+6. スライダーを操作:
+Transpose : キー変更(±12 半音)
+Pitch     : 微調整(±100 セント)
+シークバーと ⏮ ⏯ ⏭ ボタンで直接曲を操作できます
 
 ## 使い方
 
-| コントロール | 範囲 | 説明 |
-|---|---|---|
-| Transpose | ±12 半音 | キー変更(カラオケのキー変更と同じ)。テンポは変わりません |
-| Pitch | ±100 セント | 半音未満の微調整(A=440Hz ↔ 442Hz 合わせなど) |
-| シークバー | — | 曲内の再生位置を移動 |
-| ⏮ ⏯ ⏭ | — | Apple Music の曲送り / 再生・一時停止 |
-| Lyrics | — | 歌詞ウィンドウを表示(ホイール / ↑↓ / PageUp・Down / Home・End でスクロール)。歌詞が見つからない曲ではグレーアウト |
-| Route トグル | On/Off | Apple Music の出力先を仮想ケーブル(On)⇔ システム既定(Off)に切り替え |
-
-## 既知の制約
-
-- **テンポ(再生速度)変更は非対応です。** Apple Music は DRM 保護されたストリームで、音声は実時間の再生でしか取り出せません。加速再生には「まだ再生されていない未来の音声」が必要になるため、ライブソースに対しては原理的に実現できません(曲の事前キャッシュも、曲の長さと同じ時間が掛かるため実用になりません)。キー/ピッチ変更にはこの制約はありません
-- **ルーティングは次の曲から反映されます。** Apple Music の実際の音声出力は UI プロセス (AppleMusic.exe) ではなくバックエンドの AMPLibraryAgent.exe が担っており、本アプリはそちらをルーティングします。オーディオストリームは曲の切り替え時に作り直されるため、トグル切り替え後は曲を一度変えると反映されます(Apple Music の再起動は不要)
-- **シーク・ルーティングは非公式な仕組みに依存しています。** シークは Apple Music の UI 要素(UI Automation)、ルーティングは undocumented API を使っているため、Apple Music や Windows の大型更新で動かなくなる可能性があります
-- **レイテンシ**: DSP と バッファリングで合計 150ms 前後の遅延があります。音楽鑑賞では気になりませんが、映像との同期が必要な用途には不向きです
-- **アルバム名の表示**: Apple Music は SMTC のアルバム欄を使わず、アーティスト欄に「アーティスト — アルバム名」形式で報告してくるため、本アプリ側で分解して表示しています
-- 大きなピッチ変更(±6 半音以上)では音質劣化が知覚できる場合があります
-
-## 開発
-
-```
-src/amc/
-├── smtc.py      # SMTC: 再生情報の取得・トランスポート操作
-├── devices.py   # WASAPI デバイス探索・仮想ケーブル自動検出
-├── dsp.py       # Rubber Band ラッパー(キー/ピッチ)
-├── pipeline.py  # キャプチャ → DSP → 出力 のストリーミング
-├── routing.py   # Apple Music の出力先切り替え (AudioPolicyConfig)
-├── seek.py      # UI Automation によるシーク
-├── lyrics.py    # lrclib.net からの歌詞取得
-├── gui.py       # tkinter GUI
-└── __main__.py  # `python -m amc` エントリポイント
-```
-
-再生情報だけを確認するには:
-
-```powershell
-.venv\Scripts\python -m amc.smtc
-```
-
-exe のビルド(PyInstaller):
-
-```powershell
-.venv\Scripts\python -m pip install pyinstaller
-.venv\Scripts\pyinstaller --noconfirm --clean --onefile --noconsole `
-  --name AppleMusicController --icon assets\icon.ico --add-data "assets\icon.ico;." `
-  --collect-submodules winrt --paths src packaging\launcher.py
-Compress-Archive -Force -Path dist\AppleMusicController.exe, packaging\README_en.txt, packaging\README_ja.txt `
-  -DestinationPath release\AppleMusicController-win64.zip
-```
+| コントロール | 範囲        | 説明                                                       |
+| ------------ | ----------- | -----------------------------------------------------------|
+| Transpose    | ±12 半音    | キー変更(カラオケのキー変更と同じ)。テンポは変わりません   |
+| Pitch        | ±100 セント | 半音未満の微調整(A=440Hz ↔ 442Hz 合わせなど)               |
+| シークバー   | —           | 曲内の再生位置を移動                                       |
+| ⏮ ⏯ ⏭        | —           | Apple Music の曲送り / 再生・一時停止                     |
+| Lyrics       | —           | 歌詞ウィンドウを表示。歌詞が見つからない曲ではグレーアウト |
+| Route トグル | On/Off      | Apple Music の出力先切り替え                               |
